@@ -3,11 +3,13 @@ import numpy as np
 from scipy.ndimage import filters
 import casatools
 
-def flag_bad_chans(msfile: str, band: str, usedatacol: bool = False):
+
+def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, writeflags: bool = True):
     """
     Input: msfile
-    Finds remaining bad channels and flags those in the measurement set. Also writes out text file that lists
-    flags that were applied.
+    Finds remaining bad channels and flags those in the measurement set.
+    band is inferred from name if not given explicitly as int.
+    Optionally writes out text file that lists flags that were applied.
     """
 
     tb = casatools.table()
@@ -17,22 +19,28 @@ def flag_bad_chans(msfile: str, band: str, usedatacol: bool = False):
     if usedatacol:
         datacol = tcross.getcol('DATA')
     else:
-        datacol = tcross.getcol('CORRECTED_DATA')
+        try:
+            datacol = tcross.getcol('CORRECTED_DATA')
+        except RuntimeError:
+            print('No CORRECTED_DATA found. Trying DATA column')
+            datacol = tcross.getcol('DATA')
+
+    nchan = 109
+
+    # merge flags
     flagcol = tcross.getcol('FLAG')
-    
-    datacolxx = datacol[:,:,0]
-    datacolyy = datacol[:,:,3]
-    datacolxy = datacol[:,:,1]
-    datacolyx = datacol[:,:,2]
+    flagarr = np.bitwise_not(np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1))
+    print('{0}% of data already flagged'.format(np.count_nonzero(flagarr)/flagarr.size))
 
-    datacolxxamp = np.sqrt( np.real(datacolxx)**2. + np.imag(datacolxx)**2. )
-    datacolyyamp = np.sqrt( np.real(datacolyy)**2. + np.imag(datacolyy)**2. )
-    datacolxyamp = np.sqrt( np.real(datacolxy)**2. + np.imag(datacolxy)**2. )
-    datacolyxamp = np.sqrt( np.real(datacolyx)**2. + np.imag(datacolyx)**2. )
+    datacolxx = np.rollaxis(datacol[0], 1)
+    datacolxy = np.rollaxis(datacol[1], 1)
+    datacolyx = np.rollaxis(datacol[2], 1)
+    datacolyy = np.rollaxis(datacol[3], 1)
 
-    #flagarr = flagcol[:,:,0] | flagcol[:,:,3]   # probably unnecessary since flags are never pol-specific,
-                                                 # but doing this just in cases
-    flagarr = flagcol[:,:,0] | flagcol[:,:,1] | flagcol[:,:,2] | flagcol[:,:,3]
+    datacolxxamp = np.abs(datacolxx)**2
+    datacolyyamp = np.abs(datacolyy)**2
+    datacolxyamp = np.abs(datacolxy)**2
+    datacolyxamp = np.abs(datacolyx)**2
 
     datacolxxamp_mask = np.ma.masked_array(datacolxxamp, mask=flagarr, fill_value=np.nan)
     datacolyyamp_mask = np.ma.masked_array(datacolyyamp, mask=flagarr, fill_value=np.nan)
@@ -87,16 +95,22 @@ def flag_bad_chans(msfile: str, band: str, usedatacol: bool = False):
                          (meanxy > np.median(meanxy)+100*np.min(meanxy_stdfilt)) | \
                          (meanyx > np.median(meanyx)+100*np.min(meanyx_stdfilt)) ) 
 
+    print('New flags for {0}/{1} channels'.format(len(flaglist[0]), nchan))
+
     ################################################
 
-    if flaglist[0].size > 0:
+    if flaglist[0].size > 0 and writeflags:
         # turn flaglist into text file of channel flags
-        textfile = os.path.splitext(os.path.abspath(msfile))[0]+'.chans'
-        chans    = np.arange(0,109)
+        outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.chans'
+        chans    = np.arange(0, nchan)
         chanlist = chans[flaglist]
-        with open(textfile, 'w') as f:
+
+        if band is None:
+            band = int(msfile.split('_')[0])
+
+        with open(outfile, 'w') as f:
             for chan in chanlist:
-                f.write('%02d:%03d\n' % (np.int(band),chan))
+                f.write('%02d:%03d\n' % (band, chan))
 
         # write flags into FLAG column
         flagcol_altered = tb.getcol('FLAG')
@@ -106,7 +120,7 @@ def flag_bad_chans(msfile: str, band: str, usedatacol: bool = False):
     tb.close()
 
 
-def flag_bad_ants(msfile: str):
+def flag_bad_ants(msfile: str, threshold: float = 0.02, writeflags: bool = True):
     """
     Input: msfile
     Returns list of antennas to be flagged based on autocorrelations.
@@ -130,8 +144,8 @@ def flag_bad_ants(msfile: str):
     datacolxx = np.rollaxis(tband[0], 1)
     datacolyy = np.rollaxis(tband[3], 1)
 
-    datacolxxamp = np.sqrt( np.real(datacolxx)**2. + np.imag(datacolxx)**2. )
-    datacolyyamp = np.sqrt( np.real(datacolyy)**2. + np.imag(datacolyy)**2. )
+    datacolxxamp = np.abs(datacolxx)**2
+    datacolyyamp = np.abs(datacolyy)**2
 
     datacolxxampdb = 10*np.log10(datacolxxamp/1.e2)
     datacolyyampdb = 10*np.log10(datacolyyamp/1.e2)
@@ -139,6 +153,9 @@ def flag_bad_ants(msfile: str):
     # median value for every antenna
     medamp_perantx = np.median(datacolxxampdb,axis=1)
     medamp_peranty = np.median(datacolyyampdb,axis=1)
+#    print('Median amp per ant x/y:')
+#    print(list(zip(medamp_perantx, medamp_peranty)))
+    print('med(med(Amp_x))={0}, std(med(Amp_x))={1}, med(med(Amp_y))={2}, std(med(Amp_y))={3}'.format(np.median(medamp_perantx), np.std(medamp_perantx), np.median(medamp_peranty), np.std(medamp_peranty)))
 
     # get flags based on deviation from median amp
     xthresh_pos = np.median(medamp_perantx) + np.std(medamp_perantx)
@@ -147,6 +164,7 @@ def flag_bad_ants(msfile: str):
     ythresh_neg = np.median(medamp_peranty) - 2*np.std(medamp_peranty)
     flags = np.where( (medamp_perantx > xthresh_pos) | (medamp_perantx < xthresh_neg) |\
                       (medamp_peranty > ythresh_pos) | (medamp_peranty < ythresh_neg) )
+    print('Ant flags ({0} in first pass): {1}.'.format(len(flags[0]), flags[0]))
 
     # use unflagged antennas to generate median spectrum
     flagmask = np.zeros((nant,nchan))
@@ -154,22 +172,24 @@ def flag_bad_ants(msfile: str):
     datacolxxampdb_mask = np.ma.masked_array(datacolxxampdb, mask=flagmask, fill_value=np.nan)
     datacolyyampdb_mask = np.ma.masked_array(datacolyyampdb, mask=flagmask, fill_value=np.nan)
 
-    medamp_allantsx = np.median(datacolxxampdb_mask,axis=0)
-    medamp_allantsy = np.median(datacolyyampdb_mask,axis=0)
+    medamp_allantsx = np.ma.median(datacolxxampdb_mask, axis=0)
+    medamp_allantsy = np.ma.median(datacolyyampdb_mask, axis=0)
 
-    stdarrayx = np.array( [np.std(antarr/medamp_allantsx) for antarr in datacolxxampdb_mask] )
-    stdarrayy = np.array( [np.std(antarr/medamp_allantsy) for antarr in datacolyyampdb_mask] )
+    stdarrayx = np.array( [np.ma.std(antarr/medamp_allantsx) for antarr in datacolxxampdb_mask] )
+    stdarrayy = np.array( [np.ma.std(antarr/medamp_allantsy) for antarr in datacolyyampdb_mask] )
     
     # this threshold was manually selected...should be changed to something better at some point
-    flags2 = np.where( (stdarrayx > 0.02) | (stdarrayy > 0.02) )
+    flags2 = np.where( (stdarrayx > threshold) | (stdarrayy > threshold) )
 
     flagsall = np.sort(np.append(flags,flags2))
     flagsallstr = [str(flag) for flag in flagsall]
     flagsallstr2 = ",".join(flagsallstr)
+    print('Ant flags ({0} in second pass): {1}.'.format(len(flagsallstr2.split(',')), flagsallstr2))
 
-    antflagfile = os.path.dirname(os.path.abspath(msfile)) + '/flag_bad_ants.ants'
-    with open(antflagfile,'w') as f:
-        f.write(flagsallstr2)
+    if writeflags:
+        outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.ants'
+        with open(outfile, 'w') as f:
+            f.write(flagsallstr2)
     
     tb.close()
 

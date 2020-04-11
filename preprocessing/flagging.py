@@ -4,7 +4,7 @@ from scipy.ndimage import filters
 import casatools
 
 
-def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, writeflags: bool = True):
+def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, applyflags: bool = True, writeflagfile: bool = True):
     """
     Input: msfile
     Finds remaining bad channels and flags those in the measurement set.
@@ -14,8 +14,8 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, writ
 
     tb = casatools.table()
     tb.open(msfile, nomodify=False)
-
     tcross  = tb.query('ANTENNA1!=ANTENNA2')
+
     if usedatacol:
         datacol = tcross.getcol('DATA')
     else:
@@ -25,12 +25,19 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, writ
             print('No CORRECTED_DATA found. Trying DATA column')
             datacol = tcross.getcol('DATA')
 
-    nchan = 109
-
     # merge flags
+    ms = casatools.ms()
+    ms.open(msfile)
+    nspw = len(ms.getspectralwindowinfo())
+    ms.close()
+
     flagcol = tcross.getcol('FLAG')
-    flagarr = np.bitwise_not(np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1))
-    print('{0}% of data already flagged'.format(np.count_nonzero(flagarr)/flagarr.size))
+    npol, nchan, nblnspw = flagcol.shape
+    nbl = nblnspw//nspw
+    print('Data shape: {0} bls, {1} chans/spw, {2} spw, {3} pol'.format(nbl, nchan, nspw, npol))
+
+    flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
+    print('{0}% of data already flagged'.format(100*np.count_nonzero(flagarr)/flagarr.size))
 
     datacolxx = np.rollaxis(datacol[0], 1)
     datacolxy = np.rollaxis(datacol[1], 1)
@@ -95,32 +102,37 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, writ
                          (meanxy > np.median(meanxy)+100*np.min(meanxy_stdfilt)) | \
                          (meanyx > np.median(meanyx)+100*np.min(meanyx_stdfilt)) ) 
 
-    print('New flags for {0}/{1} channels'.format(len(flaglist[0]), nchan))
+    print('New flags for {0}/{1} channels'.format(len(flaglist[0]), nchan*nspw))
 
     ################################################
 
-    if flaglist[0].size > 0 and writeflags:
+    if flaglist[0].size > 0 and writeflagfile:
         # turn flaglist into text file of channel flags
         outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.chans'
         chans    = np.arange(0, nchan)
         chanlist = chans[flaglist]
 
         if band is None:
-            band = int(msfile.split('_')[0])
+            try:
+                band = int(msfile.split('_')[0])
+            except ValueError:
+                print('Cannot infer band from filename. Assuming 0.')
+                band = 0
 
         with open(outfile, 'w') as f:
             for chan in chanlist:
                 f.write('%02d:%03d\n' % (band, chan))
 
-        # write flags into FLAG column
+    # write flags into FLAG column
+    if applyflags:
         flagcol_altered = tb.getcol('FLAG')
-        flagcol_altered[:,flaglist,:] = 1
+        flagcol_altered[:,flaglist, :] = 1
         tb.putcol('FLAG', flagcol_altered)
-        #os.system('apply_sb_flags_single_band_ms2.py %s %s %02d' % (textfile,msfile,np.int(band)) )
+
     tb.close()
 
 
-def flag_bad_ants(msfile: str, threshold: float = 0.02, writeflags: bool = True):
+def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True, writeflagfile: bool = True):
     """
     Input: msfile
     Returns list of antennas to be flagged based on autocorrelations.
@@ -128,19 +140,17 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, writeflags: bool = True)
 
     tb = casatools.table()
     tb.open(msfile, nomodify=False)
-
-    tautos  = tb.query('ANTENNA1=ANTENNA2')
+    tautos = tb.query('ANTENNA1=ANTENNA2')
     
-    # iterate over antenna, 1-->256
-    nant = 256
-    nchan = 109
-#    datacolxx = np.zeros((nant, nchan))
-#    datacolyy = np.copy(datacolxx)
-#    for antind in range(nant):
-#        print(antind)
+    ms = casatools.ms()
+    ms.open(msfile)
+    nspw = len(ms.getspectralwindowinfo())
+    ms.close()
+
     tband = tautos.getcol('DATA')
-#    datacolxx[antind,bandind*109:(bandind+1)*109] = tband["DATA"][:,0]
-#    datacolyy[antind,bandind*109:(bandind+1)*109] = tband["DATA"][:,3]
+    npol, nchan, nantnspw = tband.shape
+    nant = nantnspw//nspw
+    print('Data shape: {0} ants, {1} chans/spw, {2} spw, {3} pol'.format(nant, nchan, nspw, npol))
     datacolxx = np.rollaxis(tband[0], 1)
     datacolyy = np.rollaxis(tband[3], 1)
 
@@ -167,7 +177,7 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, writeflags: bool = True)
     print('Ant flags ({0} in first pass): {1}.'.format(len(flags[0]), flags[0]))
 
     # use unflagged antennas to generate median spectrum
-    flagmask = np.zeros((nant,nchan))
+    flagmask = np.zeros((nant, nchan*nspw))
     flagmask[flags[0],:] = 1
     datacolxxampdb_mask = np.ma.masked_array(datacolxxampdb, mask=flagmask, fill_value=np.nan)
     datacolyyampdb_mask = np.ma.masked_array(datacolyyampdb, mask=flagmask, fill_value=np.nan)
@@ -186,11 +196,16 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, writeflags: bool = True)
     flagsallstr2 = ",".join(flagsallstr)
     print('Ant flags ({0} in second pass): {1}.'.format(len(flagsallstr2.split(',')), flagsallstr2))
 
-    if writeflags:
+    if writeflagfile:
         outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.ants'
         with open(outfile, 'w') as f:
             f.write(flagsallstr2)
     
+    if applyflags:
+        flagcol_altered = tb.getcol('FLAG')
+        flagcol_altered[:,flagsall, :] = 1
+        tb.putcol('FLAG', flagcol_altered)
+
     tb.close()
 
 

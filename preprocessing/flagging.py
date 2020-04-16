@@ -44,24 +44,27 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     datacolyx = np.rollaxis(datacol[2], 1)
     datacolyy = np.rollaxis(datacol[3], 1)
 
-    datacolxxamp = np.abs(datacolxx)**2
-    datacolyyamp = np.abs(datacolyy)**2
-    datacolxyamp = np.abs(datacolxy)**2
-    datacolyxamp = np.abs(datacolyx)**2
+    datacolxxamp = np.ma.masked_invalid(np.abs(datacolxx)**2)
+    datacolyyamp = np.ma.masked_invalid(np.abs(datacolyy)**2)
+    datacolxyamp = np.ma.masked_invalid(np.abs(datacolxy)**2)
+    datacolyxamp = np.ma.masked_invalid(np.abs(datacolyx)**2)
 
-    datacolxxamp_mask = np.ma.masked_array(datacolxxamp, mask=flagarr, fill_value=np.nan)
-    datacolyyamp_mask = np.ma.masked_array(datacolyyamp, mask=flagarr, fill_value=np.nan)
-    datacolxyamp_mask = np.ma.masked_array(datacolxyamp, mask=flagarr, fill_value=np.nan)
-    datacolyxamp_mask = np.ma.masked_array(datacolyxamp, mask=flagarr, fill_value=np.nan)
+    mask = np.ma.make_mask(flagarr)
+    mask = mask | datacolxxamp.mask | datacolyyamp.mask | datacolxyamp.mask | datacolyxamp.mask
 
-    maxxx = np.max(datacolxxamp_mask,axis=0)
-    maxyy = np.max(datacolyyamp_mask,axis=0)
-    maxxy = np.max(datacolxyamp_mask,axis=0)
-    maxyx = np.max(datacolyxamp_mask,axis=0)
-    meanxx = np.mean(datacolxxamp_mask,axis=0)
-    meanyy = np.mean(datacolyyamp_mask,axis=0)
-    meanxy = np.mean(datacolxyamp_mask,axis=0)
-    meanyx = np.mean(datacolyxamp_mask,axis=0)
+    datacolxxamp_mask = np.ma.masked_array(datacolxxamp, mask=mask, fill_value=np.nan)
+    datacolyyamp_mask = np.ma.masked_array(datacolyyamp, mask=mask, fill_value=np.nan)
+    datacolxyamp_mask = np.ma.masked_array(datacolxyamp, mask=mask, fill_value=np.nan)
+    datacolyxamp_mask = np.ma.masked_array(datacolyxamp, mask=mask, fill_value=np.nan)
+
+    maxxx = np.ma.max(datacolxxamp_mask,axis=0)
+    maxyy = np.ma.max(datacolyyamp_mask,axis=0)
+    maxxy = np.ma.max(datacolxyamp_mask,axis=0)
+    maxyx = np.ma.max(datacolyxamp_mask,axis=0)
+    meanxx = np.ma.mean(datacolxxamp_mask,axis=0)
+    meanyy = np.ma.mean(datacolyyamp_mask,axis=0)
+    meanxy = np.ma.mean(datacolxyamp_mask,axis=0)
+    meanyx = np.ma.mean(datacolyxamp_mask,axis=0)
 
     maxxx_medfilt = filters.median_filter(maxxx,size=10)
     maxyy_medfilt = filters.median_filter(maxyy,size=10)
@@ -73,36 +76,36 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     maxxy_norm = maxxy/maxxy_medfilt
     maxyx_norm = maxyx/maxyx_medfilt
     
-    maxxx_norm_stdfilt = filters.generic_filter(maxxx_norm, np.std, size=25)
-    maxyy_norm_stdfilt = filters.generic_filter(maxyy_norm, np.std, size=25)
-    maxxy_norm_stdfilt = filters.generic_filter(maxxy_norm, np.std, size=25)
-    maxyx_norm_stdfilt = filters.generic_filter(maxyx_norm, np.std, size=25)
-    maxvalxx  = 1 - 10*np.min(maxxx_norm_stdfilt)
-    maxval2xx = 1 + 10*np.min(maxxx_norm_stdfilt)
-    maxvalyy  = 1 - 10*np.min(maxyy_norm_stdfilt)
-    maxval2yy = 1 + 10*np.min(maxyy_norm_stdfilt)
-    maxvalxy  = 1 - 6*np.min(maxxy_norm_stdfilt)
-    maxval2xy = 1 + 6*np.min(maxxy_norm_stdfilt)
-    maxvalyx  = 1 - 6*np.min(maxyx_norm_stdfilt)
-    maxval2yx = 1 + 6*np.min(maxyx_norm_stdfilt)
-    meanxx_stdfilt = filters.generic_filter(meanxx, np.std, size=25)
-    meanyy_stdfilt = filters.generic_filter(meanyy, np.std, size=25)
-    meanxy_stdfilt = filters.generic_filter(meanxy, np.std, size=25)
-    meanyx_stdfilt = filters.generic_filter(meanyx, np.std, size=25)
+    maxxx_norm_stdfilt = filters.generic_filter(maxxx_norm, np.ma.std, size=25)
+    maxyy_norm_stdfilt = filters.generic_filter(maxyy_norm, np.ma.std, size=25)
+    maxxy_norm_stdfilt = filters.generic_filter(maxxy_norm, np.ma.std, size=25)
+    maxyx_norm_stdfilt = filters.generic_filter(maxyx_norm, np.ma.std, size=25)
+    maxvalxx  = 1 - 10*np.ma.min(maxxx_norm_stdfilt)
+    maxval2xx = 1 + 10*np.ma.min(maxxx_norm_stdfilt)
+    maxvalyy  = 1 - 10*np.ma.min(maxyy_norm_stdfilt)
+    maxval2yy = 1 + 10*np.ma.min(maxyy_norm_stdfilt)
+    maxvalxy  = 1 - 6*np.ma.min(maxxy_norm_stdfilt)
+    maxval2xy = 1 + 6*np.ma.min(maxxy_norm_stdfilt)
+    maxvalyx  = 1 - 6*np.ma.min(maxyx_norm_stdfilt)
+    maxval2yx = 1 + 6*np.ma.min(maxyx_norm_stdfilt)
+    meanxx_stdfilt = filters.generic_filter(meanxx, np.ma.std, size=25)
+    meanyy_stdfilt = filters.generic_filter(meanyy, np.ma.std, size=25)
+    meanxy_stdfilt = filters.generic_filter(meanxy, np.ma.std, size=25)
+    meanyx_stdfilt = filters.generic_filter(meanyx, np.ma.std, size=25)
 
     # bad channels tend to have maxness values close to zero or slightly negative, compared to
     # good channels, which have significantly positive maxs, or right-maxed distributions.
     #flaglist = np.where( (maxxx < 1) | (maxyy < 1)  )
     flaglist = np.where( (maxxx_norm < maxvalxx) | (maxyy_norm < maxvalyy) |   \
                          (maxxx_norm > maxval2xx) | (maxyy_norm > maxval2yy) | \
-                         (meanxx > np.median(meanxx)+100*np.min(meanxx_stdfilt))  | \
-                         (meanyy > np.median(meanyy)+100*np.min(meanyy_stdfilt)) | \
+                         (meanxx > np.ma.median(meanxx)+100*np.ma.min(meanxx_stdfilt))  | \
+                         (meanyy > np.ma.median(meanyy)+100*np.ma.min(meanyy_stdfilt)) | \
                          (maxxy_norm < maxvalxy) | (maxyx_norm < maxvalyx) | \
                          (maxxy_norm > maxval2xy) | (maxyx_norm > maxval2yx) | \
-                         (meanxy > np.median(meanxy)+100*np.min(meanxy_stdfilt)) | \
-                         (meanyx > np.median(meanyx)+100*np.min(meanyx_stdfilt)) ) 
+                         (meanxy > np.ma.median(meanxy)+100*np.ma.min(meanxy_stdfilt)) | \
+                         (meanyx > np.ma.median(meanyx)+100*np.ma.min(meanyx_stdfilt)) ) 
 
-    print('New flags for {0}/{1} channels'.format(len(flaglist[0]), nchan*nspw))
+    print('Flagged {0} of {1} channels'.format(len(flaglist[0]), nchan*nspw))
 
     ################################################
 
@@ -126,9 +129,11 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     # write flags into FLAG column
     if applyflags:
         flagcol_altered = tb.getcol('FLAG')
-        flagcol_altered[:,flaglist, :] = 1
+        flagcol_altered[:, flaglist, :] = 1
         tb.putcol('FLAG', flagcol_altered)
 
+    flagcol = tb.getcol('FLAG')
+    print('{0}% of data now flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
     tb.close()
 
 
@@ -140,7 +145,13 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
 
     tb = casatools.table()
     tb.open(msfile, nomodify=False)
+    flagcol = tb.getcol('FLAG')
+    flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
+    print('{0}% of data already flagged'.format(100*np.count_nonzero(flagarr)/flagarr.size))
+
     tautos = tb.query('ANTENNA1=ANTENNA2')
+    flagcol = tautos.getcol('FLAG')
+    flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
     
     ms = casatools.ms()
     ms.open(msfile)
@@ -154,59 +165,81 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
     datacolxx = np.rollaxis(tband[0], 1)
     datacolyy = np.rollaxis(tband[3], 1)
 
-    datacolxxamp = np.abs(datacolxx)**2
-    datacolyyamp = np.abs(datacolyy)**2
+    mask = np.ma.make_mask(flagarr)
+    datacolxxamp = np.ma.masked_array(np.abs(datacolxx)**2, mask=mask)
+    datacolyyamp = np.ma.masked_array(np.abs(datacolyy)**2, mask=mask)
 
-    datacolxxampdb = 10*np.log10(datacolxxamp/1.e2)
-    datacolyyampdb = 10*np.log10(datacolyyamp/1.e2)
+    datacolxxampdb = 10*np.ma.log10(datacolxxamp/1.e2)
+    datacolyyampdb = 10*np.ma.log10(datacolyyamp/1.e2)
 
     # median value for every antenna
-    medamp_perantx = np.median(datacolxxampdb,axis=1)
-    medamp_peranty = np.median(datacolyyampdb,axis=1)
-#    print('Median amp per ant x/y:')
-#    print(list(zip(medamp_perantx, medamp_peranty)))
-    print('med(med(Amp_x))={0}, std(med(Amp_x))={1}, med(med(Amp_y))={2}, std(med(Amp_y))={3}'.format(np.median(medamp_perantx), np.std(medamp_perantx), np.median(medamp_peranty), np.std(medamp_peranty)))
+    medamp_perantx = np.ma.median(datacolxxampdb, axis=1)
+    medamp_peranty = np.ma.median(datacolyyampdb, axis=1)
+
+    print('Median amp per ant x/y:')
+    print('med(med(Amp_x))={0}, std(med(Amp_x))={1}, med(med(Amp_y))={2}, std(med(Amp_y))={3}'.format(np.ma.median(medamp_perantx), np.ma.std(medamp_perantx), np.ma.median(medamp_peranty), np.ma.std(medamp_peranty)))
 
     # get flags based on deviation from median amp
-    xthresh_pos = np.median(medamp_perantx) + np.std(medamp_perantx)
-    xthresh_neg = np.median(medamp_perantx) - 2*np.std(medamp_perantx)
-    ythresh_pos = np.median(medamp_peranty) + np.std(medamp_peranty)
-    ythresh_neg = np.median(medamp_peranty) - 2*np.std(medamp_peranty)
+    xthresh_pos = np.ma.median(medamp_perantx) + np.ma.std(medamp_perantx)
+    xthresh_neg = np.ma.median(medamp_perantx) - 2*np.ma.std(medamp_perantx)
+    ythresh_pos = np.ma.median(medamp_peranty) + np.ma.std(medamp_peranty)
+    ythresh_neg = np.ma.median(medamp_peranty) - 2*np.ma.std(medamp_peranty)
     flags = np.where( (medamp_perantx > xthresh_pos) | (medamp_perantx < xthresh_neg) |\
                       (medamp_peranty > ythresh_pos) | (medamp_peranty < ythresh_neg) )
     print('Ant flags ({0} in first pass): {1}.'.format(len(flags[0]), flags[0]))
 
     # use unflagged antennas to generate median spectrum
-    flagmask = np.zeros((nant, nchan*nspw))
-    flagmask[flags[0],:] = 1
-    datacolxxampdb_mask = np.ma.masked_array(datacolxxampdb, mask=flagmask, fill_value=np.nan)
-    datacolyyampdb_mask = np.ma.masked_array(datacolyyampdb, mask=flagmask, fill_value=np.nan)
+    datacolxxampdb.mask[flags[0]] = True
+    datacolyyampdb.mask[flags[0]] = True
 
-    medamp_allantsx = np.ma.median(datacolxxampdb_mask, axis=0)
-    medamp_allantsy = np.ma.median(datacolyyampdb_mask, axis=0)
+    medamp_specx = np.ma.median(datacolxxampdb, axis=0)
+    medamp_specy = np.ma.median(datacolyyampdb, axis=0)
 
-    stdarrayx = np.array( [np.ma.std(antarr/medamp_allantsx) for antarr in datacolxxampdb_mask] )
-    stdarrayy = np.array( [np.ma.std(antarr/medamp_allantsy) for antarr in datacolyyampdb_mask] )
-    
-    # this threshold was manually selected...should be changed to something better at some point
+    stdarrayx = np.ma.std(datacolxxampdb/medamp_specx, axis=1)
+    stdarrayy = np.ma.std(datacolyyampdb/medamp_specy, axis=1)
+#    stdarrayy = np.array( [np.ma.std(spec/medamp_specy) for spec in datacolyyampdb] )
+    print(stdarrayx, stdarrayy)
+
     flags2 = np.where( (stdarrayx > threshold) | (stdarrayy > threshold) )
-
-    flagsall = np.sort(np.append(flags,flags2))
-    flagsallstr = [str(flag) for flag in flagsall]
-    flagsallstr2 = ",".join(flagsallstr)
-    print('Ant flags ({0} in second pass): {1}.'.format(len(flagsallstr2.split(',')), flagsallstr2))
+    flagsall = np.sort(np.append(flags, flags2))
+    flagsallstr = ",".join([str(flag) for flag in flagsall])
+    print('Ant flags ({0} in second pass): {1}.'.format(len(flagsallstr.split(',')), flagsallstr))
 
     if writeflagfile:
         outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.ants'
         with open(outfile, 'w') as f:
-            f.write(flagsallstr2)
+            f.write(flagsallstr)
     
     if applyflags:
+        ms = casatools.ms()
+        ms.open(msfile)
+        ant1 = ms.getdata('antenna1')['antenna1']
+        ant2 = ms.getdata('antenna2')['antenna2']
+
+        blflags = []
+        for badant in flagsall:
+            blflags += np.where((badant == ant1) | (badant == ant2))[0].tolist()
+
         flagcol_altered = tb.getcol('FLAG')
-        flagcol_altered[:,flagsall, :] = 1
+        flagcol_altered[:, :, blflags] = 1
         tb.putcol('FLAG', flagcol_altered)
 
+    flagcol = tb.getcol('FLAG')
+    print('{0}% of data now flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
     tb.close()
+
+
+def unflag(msfile: str):
+    """ Remove all flags from msfile
+    """ 
+
+    import casatasks
+    casatasks.flagdata(msfile, mode='unflag')
+
+    tb = casatools.table()
+    tb.open(msfile, nomodify=False)
+    flagcol = tb.getcol('FLAG')
+    print('{0}% of data flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
 
 
 def merge_flags(msfile1: str, msfile2: str):

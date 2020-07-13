@@ -9,8 +9,11 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     Input: msfile
     Finds remaining bad channels and flags those in the measurement set.
     band is inferred from name if not given explicitly as int.
+    applyflags and writeflagfile control whether to apply or write flags as text file.
     Optionally writes out text file that lists flags that were applied.
     """
+
+    outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.chans'
 
     tb = casatools.table()
     tb.open(msfile, nomodify=False)
@@ -111,7 +114,6 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
 
     if flaglist[0].size > 0 and writeflagfile:
         # turn flaglist into text file of channel flags
-        outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.chans'
         chans    = np.arange(0, nchan)
         chanlist = chans[flaglist]
 
@@ -136,12 +138,25 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     print('{0}% of data now flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
     tb.close()
 
+    if os.path.exists(outfile):
+        if writeflagfile:
+            print("Wrote flag file {0}".format(outfile))
+        return outfile
+    else:
+        if writeflagfile:
+            print("No flag file written")
+        return None
+
 
 def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True, writeflagfile: bool = True):
     """
     Input: msfile
-    Returns list of antennas to be flagged based on autocorrelations.
+    Optionally can define threshold for excess variance in antenna noise.
+    applyflags and writeflagfile control whether to apply or write flags as text file.
+    If flag file written, function will return path to text file that lists flags.
     """
+
+    outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.ants'
 
     tb = casatools.table()
     tb.open(msfile, nomodify=False)
@@ -206,7 +221,6 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
     print('Ant flags ({0} in second pass): {1}.'.format(len(flagsallstr.split(',')), flagsallstr))
 
     if writeflagfile:
-        outfile = os.path.dirname(os.path.abspath(msfile)) + '/flags.ants'
         with open(outfile, 'w') as f:
             f.write(flagsallstr)
     
@@ -228,6 +242,15 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
     print('{0}% of data now flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
     tb.close()
 
+    if os.path.exists(outfile):
+        if writeflagfile:
+            print("Wrote flag file {0}".format(outfile))
+        return outfile
+    else:
+        if writeflagfile:
+            print("No flag file written")
+        return None
+
 
 def unflag(msfile: str):
     """ Remove all flags from msfile
@@ -240,6 +263,7 @@ def unflag(msfile: str):
     tb.open(msfile, nomodify=False)
     flagcol = tb.getcol('FLAG')
     print('{0}% of data flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
+    tb.close()
 
 
 def merge_flags(msfile1: str, msfile2: str):
@@ -272,3 +296,4 @@ def write_to_flag_column(msfile: str, flag_npy: str):
     flagcol = np.load(flag_npy)
     assert flagcol.shape == tb.getcol('FLAG').shape, 'Flag file and measurement set have different shapes'
     tb.putcol('FLAG', flagcol | tb.getcol('FLAG'))
+    tb.close()

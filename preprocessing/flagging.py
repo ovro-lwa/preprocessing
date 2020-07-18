@@ -39,6 +39,8 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
     nbl = nblnspw//nspw
     print('Data shape: {0} bls, {1} chans/spw, {2} spw, {3} pol'.format(nbl, nchan, nspw, npol))
 
+    datacol = datacol.reshape(npol, nchan*nspw, nbl)  # unwrap spw
+    flagcol = flagcol.reshape(npol, nchan*nspw, nbl)  # unwrap spw
     flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
     print('{0}% of data already flagged'.format(100*np.count_nonzero(flagarr)/flagarr.size))
 
@@ -114,7 +116,7 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
 
     if flaglist[0].size > 0 and writeflagfile:
         # turn flaglist into text file of channel flags
-        chans    = np.arange(0, nchan)
+        chans    = np.arange(0, nchan*nspw)
         chanlist = chans[flaglist]
 
         if band is None:
@@ -130,9 +132,9 @@ def flag_bad_chans(msfile: str, band: str = None, usedatacol: bool = False, appl
 
     # write flags into FLAG column
     if applyflags:
-        flagcol_altered = tb.getcol('FLAG')
+        flagcol_altered = tcross.getcol('FLAG').reshape(npol, nchan*nspw, nbl)
         flagcol_altered[:, flaglist, :] = 1
-        tb.putcol('FLAG', flagcol_altered)
+        tcross.putcol('FLAG', flagcol_altered.reshape(npol, nchan, nbl*nspw))
 
     flagcol = tb.getcol('FLAG')
     print('{0}% of data now flagged'.format(100*np.count_nonzero(flagcol)/flagcol.size))
@@ -163,19 +165,22 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
     flagcol = tb.getcol('FLAG')
     flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
     print('{0}% of data already flagged'.format(100*np.count_nonzero(flagarr)/flagarr.size))
-
-    tautos = tb.query('ANTENNA1=ANTENNA2')
-    flagcol = tautos.getcol('FLAG')
-    flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
-    
     ms = casatools.ms()
     ms.open(msfile)
     nspw = len(ms.getspectralwindowinfo())
     ms.close()
 
+    tautos = tb.query('ANTENNA1=ANTENNA2')
     tband = tautos.getcol('DATA')
     npol, nchan, nantnspw = tband.shape
     nant = nantnspw//nspw
+    nbl = nant*(nant-1)//2
+    tband = tband.reshape(npol, nchan*nspw, nant)  # unwrap spw
+
+    flagcol = tautos.getcol('FLAG')
+    flagcol = flagcol.reshape(npol, nchan*nspw, nant)  # unwrap spw
+    flagarr = np.rollaxis(flagcol[0,:,:] | flagcol[1,:,:] | flagcol[2,:,:] | flagcol[3,:,:], 1)
+
     print('Data shape: {0} ants, {1} chans/spw, {2} spw, {3} pol'.format(nant, nchan, nspw, npol))
     datacolxx = np.rollaxis(tband[0], 1)
     datacolyy = np.rollaxis(tband[3], 1)
@@ -234,7 +239,9 @@ def flag_bad_ants(msfile: str, threshold: float = 0.02, applyflags: bool = True,
         for badant in flagsall:
             blflags += np.where((badant == ant1) | (badant == ant2))[0].tolist()
 
+        print('blflags:', blflags)
         flagcol_altered = tb.getcol('FLAG')
+        print(flagcol_altered.shape)
         flagcol_altered[:, :, blflags] = 1
         tb.putcol('FLAG', flagcol_altered)
 
